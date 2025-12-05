@@ -15,8 +15,7 @@ const Admin = () => {
     correctAnswer: '',
     code: '',
     difficulty: 'medium',
-    marks: 1,
-    exam: ''
+    marks: 1
   });
 
   const examCategories = ['HTML', 'CSS', 'JavaScript', 'React'];
@@ -44,11 +43,6 @@ const Admin = () => {
     }
   }, [activeTab]);
 
-  // Save questions to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem('examQuestions', JSON.stringify(questions));
-  }, [questions]);
-
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
@@ -62,14 +56,27 @@ const Admin = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+
+    // Build the question object with correct schema
     const newQuestion = {
       id: Date.now(),
+      exam: selectedExam,        // KEY FIX: use 'exam' not 'category'
       type: questionType,
-      exam: selectedExam,
-      ...formData,
+      question: formData.question,
+      options: questionType === 'mcq' ? formData.options.map(o => o.trim()) : [],
+      correctAnswer: questionType === 'mcq' 
+        ? parseInt(formData.correctAnswer)  // KEY FIX: store as number for MCQ
+        : formData.correctAnswer,           // store as string for true/false
+      difficulty: formData.difficulty,
+      marks: parseInt(formData.marks),
+      code: questionType === 'coding' ? formData.code : '',
       createdAt: new Date().toISOString()
     };
-    setQuestions([...questions, newQuestion]);
+
+    // Update state and localStorage
+    const updatedQuestions = [...questions, newQuestion];
+    setQuestions(updatedQuestions);
+    localStorage.setItem('examQuestions', JSON.stringify(updatedQuestions));
 
     // Reset form
     setFormData({
@@ -78,8 +85,7 @@ const Admin = () => {
       correctAnswer: '',
       code: '',
       difficulty: 'medium',
-      marks: 1,
-      exam: selectedExam
+      marks: 1
     });
     setShowAddQuestion(false);
     alert('Question added successfully!');
@@ -87,7 +93,9 @@ const Admin = () => {
 
   const deleteQuestion = (id) => {
     if (window.confirm('Are you sure you want to delete this question?')) {
-      setQuestions(questions.filter(q => q.id !== id));
+      const updatedQuestions = questions.filter(q => q.id !== id);
+      setQuestions(updatedQuestions);
+      localStorage.setItem('examQuestions', JSON.stringify(updatedQuestions));
     }
   };
 
@@ -122,7 +130,7 @@ const Admin = () => {
 
     const totalStudents = results.length;
     const avgScore = (results.reduce((sum, r) => sum + parseFloat(r.percentage), 0) / totalStudents).toFixed(1);
-    const passCount = results.filter(r => parseFloat(r.percentage) >= 70).length;
+    const passCount = results.filter(r => parseFloat(r.percentage) >= 50).length;
     const passRate = ((passCount / totalStudents) * 100).toFixed(1);
 
     return { totalStudents, avgScore, passCount, passRate };
@@ -130,7 +138,7 @@ const Admin = () => {
 
   const stats = calculateStats();
 
-  // Filter questions by selected exam
+  // Filter questions by selected exam - KEY FIX: use 'exam' property
   const filteredQuestions = selectedExam
     ? questions.filter(q => q.exam === selectedExam)
     : [];
@@ -264,17 +272,17 @@ const Admin = () => {
                         </td>
                         <td className="percentage-cell">
                           <span className={`percentage-badge ${
-                            parseFloat(result.percentage) >= 70 ? 'pass' : 
-                            parseFloat(result.percentage) >= 40 ? 'average' : 'fail'
+                            parseFloat(result.percentage) >= 50 ? 'pass' : 
+                            parseFloat(result.percentage) >= 30 ? 'average' : 'fail'
                           }`}>
                             {result.percentage}%
                           </span>
                         </td>
                         <td>
                           <span className={`status-badge ${
-                            parseFloat(result.percentage) >= 70 ? 'passed' : 'failed'
+                            parseFloat(result.percentage) >= 50 ? 'passed' : 'failed'
                           }`}>
-                            {parseFloat(result.percentage) >= 70 ? 'Passed' : 'Failed'}
+                            {parseFloat(result.percentage) >= 50 ? 'Passed' : 'Failed'}
                           </span>
                         </td>
                         <td className="date-cell">
@@ -512,10 +520,10 @@ const Admin = () => {
                           {q.type === 'mcq' && q.options && (
                             <div className="question-options">
                               {q.options.map((opt, idx) => (
-                                <div key={idx} className={`option ${idx == q.correctAnswer ? 'correct' : ''}`}>
+                                <div key={idx} className={`option ${idx === q.correctAnswer ? 'correct' : ''}`}>
                                   <span className="option-label">{String.fromCharCode(65 + idx)}.</span>
                                   <span>{opt}</span>
-                                  {idx == q.correctAnswer && <span className="correct-mark">✓</span>}
+                                  {idx === q.correctAnswer && <span className="correct-mark">✓</span>}
                                 </div>
                               ))}
                             </div>

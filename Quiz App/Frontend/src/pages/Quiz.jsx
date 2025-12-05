@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import './styles/Quiz.css';
 
+const examCategories = ['HTML', 'CSS', 'JavaScript', 'React'];
+const EXAM_DURATION_MINUTES = 30;
+
 const Quiz = () => {
-  const [currentView, setCurrentView] = useState('home'); // home, exam, results, history
+  const [currentView, setCurrentView] = useState('home'); // 'home' | 'exam' | 'results' | 'history'
   const [selectedExam, setSelectedExam] = useState('');
   const [questions, setQuestions] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -13,71 +16,64 @@ const Quiz = () => {
   const [studentId] = useState('STU' + Date.now().toString().slice(-6));
   const [myResults, setMyResults] = useState([]);
 
-  const examCategories = ['HTML', 'CSS', 'JavaScript', 'React'];
-  const examDuration = 30; // 30 minutes per exam
-
-  // Load student's previous results
+  // Load previous results from localStorage
   useEffect(() => {
     const allResults = JSON.parse(localStorage.getItem('examResults') || '[]');
-    const studentResults = allResults.filter(r => r.studentId === studentId);
-    setMyResults(studentResults);
+    const mine = allResults.filter(r => r.studentId === studentId);
+    setMyResults(mine);
   }, [studentId]);
 
   // Timer effect
   useEffect(() => {
     if (timeRemaining > 0 && examStarted && currentView === 'exam') {
       const timer = setTimeout(() => {
-        setTimeRemaining(timeRemaining - 1);
+        setTimeRemaining(prev => prev - 1);
       }, 1000);
       return () => clearTimeout(timer);
-    } else if (timeRemaining === 0 && examStarted) {
-      handleSubmitExam();
     }
-  }, [timeRemaining, examStarted, currentView]);
+    if (timeRemaining === 0 && examStarted && currentView === 'exam') {
+      handleSubmitExam(true);
+    }
+  }, [timeRemaining, examStarted, currentView]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const formatTime = (seconds) => {
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  const formatTime = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Start exam - Load questions from localStorage
   const startExam = (exam) => {
-    const savedQuestions = localStorage.getItem('examQuestions');
-    if (!savedQuestions) {
-      alert('No questions available. Please contact admin.');
-      return;
-    }
-
-    const allQuestions = JSON.parse(savedQuestions);
-    const examQuestions = allQuestions.filter(q => q.exam === exam);
+    const savedQuestions = JSON.parse(localStorage.getItem('examQuestions') || '[]');
+    const examQuestions = savedQuestions.filter(q => q.exam === exam);
 
     if (examQuestions.length === 0) {
-      alert(`No questions found for ${exam} exam. Please contact admin.`);
+      alert(`No questions found for ${exam}. Please contact the admin.`);
       return;
     }
 
     setSelectedExam(exam);
     setQuestions(examQuestions);
-    setTimeRemaining(examDuration * 60); // Convert to seconds
     setCurrentQuestion(0);
     setAnswers({});
+    setTimeRemaining(EXAM_DURATION_MINUTES * 60);
     setExamStarted(true);
     setCurrentView('exam');
   };
 
-  const handleAnswerChange = (questionId, answer) => {
-    setAnswers({ ...answers, [questionId]: answer });
+  const handleAnswerChange = (questionId, value) => {
+    setAnswers(prev => ({ ...prev, [questionId]: value }));
   };
 
   const calculateScore = () => {
     let totalScore = 0;
     let maxScore = 0;
 
-    questions.forEach((q) => {
-      maxScore += q.marks;
+    questions.forEach(q => {
+      maxScore += q.marks || 0;
       if (q.type === 'mcq' || q.type === 'truefalse') {
-        if (answers[q.id] == q.correctAnswer) {
-          totalScore += q.marks;
+        if (answers[q.id] !== undefined && answers[q.id] === q.correctAnswer) {
+          totalScore += q.marks || 0;
         }
       }
     });
@@ -85,15 +81,18 @@ const Quiz = () => {
     return { totalScore, maxScore };
   };
 
-  const handleSubmitExam = () => {
-    if (!window.confirm('Are you sure you want to submit the exam?')) {
-      return;
+  // Submit exam - Save to localStorage
+  const handleSubmitExam = (auto = false) => {
+    if (!auto) {
+      const ok = window.confirm('Submit the exam?');
+      if (!ok) return;
     }
 
     const { totalScore, maxScore } = calculateScore();
-    const percentage = ((totalScore / maxScore) * 100).toFixed(1);
+    const percentage = maxScore > 0
+      ? ((totalScore / maxScore) * 100).toFixed(1)
+      : '0.0';
 
-    // Save result to localStorage
     const allResults = JSON.parse(localStorage.getItem('examResults') || '[]');
     const newResult = {
       id: Date.now(),
@@ -108,43 +107,44 @@ const Quiz = () => {
       questionsCount: questions.length
     };
 
-    allResults.push(newResult);
-    localStorage.setItem('examResults', JSON.stringify(allResults));
+    const updatedResults = [...allResults, newResult];
+    localStorage.setItem('examResults', JSON.stringify(updatedResults));
+    setMyResults(prev => [...prev, newResult]);
 
     setScore(totalScore);
     setExamStarted(false);
     setCurrentView('results');
-
-    // Update student results
-    setMyResults([...myResults, newResult]);
   };
 
-  const goToHome = () => {
+  const goHome = () => {
     setCurrentView('home');
     setSelectedExam('');
     setQuestions([]);
-    setCurrentQuestion(0);
     setAnswers({});
     setExamStarted(false);
+    setTimeRemaining(0);
+    setCurrentQuestion(0);
   };
 
   const viewHistory = () => {
     const allResults = JSON.parse(localStorage.getItem('examResults') || '[]');
-    const studentResults = allResults.filter(r => r.studentId === studentId);
-    setMyResults(studentResults);
+    const mine = allResults.filter(r => r.studentId === studentId);
+    setMyResults(mine);
     setCurrentView('history');
   };
 
   const getQuestionStatus = (index) => {
-    const question = questions[index];
-    if (answers[question.id] !== undefined && answers[question.id] !== '') {
+    const q = questions[index];
+    if (answers[q.id] !== undefined && answers[q.id] !== '') {
       return 'answered';
     }
     return 'unanswered';
   };
 
-  // HOME VIEW - Exam Selection
+  // ==================== HOME VIEW ====================
   if (currentView === 'home') {
+    const savedQuestions = JSON.parse(localStorage.getItem('examQuestions') || '[]');
+
     return (
       <div className="quiz-container">
         <div className="quiz-header-home">
@@ -153,16 +153,15 @@ const Quiz = () => {
           <div className="student-info-header">
             <span className="student-id-display">Student ID: {studentId}</span>
             <button onClick={viewHistory} className="history-btn">
-              📜 View My Results
+              View My Results
             </button>
           </div>
         </div>
 
         <div className="exam-selection-grid">
-          {examCategories.map((exam) => {
-            const savedQuestions = JSON.parse(localStorage.getItem('examQuestions') || '[]');
+          {examCategories.map(exam => {
             const examQuestions = savedQuestions.filter(q => q.exam === exam);
-            const totalMarks = examQuestions.reduce((sum, q) => sum + q.marks, 0);
+            const totalMarks = examQuestions.reduce((sum, q) => sum + (q.marks || 0), 0);
 
             return (
               <div key={exam} className="exam-card-student">
@@ -180,7 +179,7 @@ const Quiz = () => {
                   </div>
                   <div className="info-item">
                     <span className="info-label">Duration</span>
-                    <span className="info-value">{examDuration} min</span>
+                    <span className="info-value">{EXAM_DURATION_MINUTES} min</span>
                   </div>
                   <div className="info-item">
                     <span className="info-label">Total Marks</span>
@@ -202,12 +201,12 @@ const Quiz = () => {
     );
   }
 
-  // HISTORY VIEW - Previous Results
+  // ==================== HISTORY VIEW ====================
   if (currentView === 'history') {
     return (
       <div className="quiz-container">
         <div className="history-header">
-          <button onClick={goToHome} className="back-home-btn">
+          <button onClick={goHome} className="back-home-btn">
             ← Back to Exams
           </button>
           <h1>My Examination History</h1>
@@ -220,79 +219,60 @@ const Quiz = () => {
               <div className="empty-icon">📋</div>
               <h3>No Exam History</h3>
               <p>You haven't taken any exams yet. Start your first exam!</p>
-              <button onClick={goToHome} className="start-exam-btn">
+              <button onClick={goHome} className="start-exam-btn">
                 Go to Exams
               </button>
             </div>
           ) : (
             <div className="history-grid">
-              {myResults.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt)).map((result) => (
-                <div key={result.id} className="history-card">
-                  <div className="history-card-header">
-                    <h3>{result.category}</h3>
-                    <span className={`status-badge ${parseFloat(result.percentage) >= 70 ? 'passed' : 'failed'}`}>
-                      {parseFloat(result.percentage) >= 70 ? 'Passed' : 'Failed'}
-                    </span>
-                  </div>
-
-                  <div className="history-stats">
-                    <div className="stat-row">
-                      <span className="stat-label">Score:</span>
-                      <span className="stat-value">{result.score} / {result.totalMarks}</span>
-                    </div>
-                    <div className="stat-row">
-                      <span className="stat-label">Percentage:</span>
-                      <span className={`stat-value ${parseFloat(result.percentage) >= 70 ? 'pass-color' : 'fail-color'}`}>
-                        {result.percentage}%
+              {myResults
+                .slice()
+                .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
+                .map(result => (
+                  <div key={result.id} className="history-card">
+                    <div className="history-card-header">
+                      <h3>{result.category}</h3>
+                      <span className={`status-badge ${parseFloat(result.percentage) >= 50 ? 'passed' : 'failed'}`}>
+                        {parseFloat(result.percentage) >= 50 ? 'Passed' : 'Failed'}
                       </span>
                     </div>
-                    <div className="stat-row">
-                      <span className="stat-label">Questions:</span>
-                      <span className="stat-value">{result.questionsCount}</span>
-                    </div>
-                    <div className="stat-row">
-                      <span className="stat-label">Date:</span>
-                      <span className="stat-value date-text">
-                        {new Date(result.submittedAt).toLocaleDateString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric'
-                        })}
-                      </span>
-                    </div>
-                    <div className="stat-row">
-                      <span className="stat-label">Time:</span>
-                      <span className="stat-value date-text">
-                        {new Date(result.submittedAt).toLocaleTimeString('en-IN', {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
+                    <div className="history-stats">
+                      <div className="stat-row">
+                        <span className="stat-label">Score:</span>
+                        <span className="stat-value">{result.score} / {result.totalMarks}</span>
+                      </div>
+                      <div className="stat-row">
+                        <span className="stat-label">Percentage:</span>
+                        <span className={`stat-value ${parseFloat(result.percentage) >= 50 ? 'pass-color' : 'fail-color'}`}>
+                          {result.percentage}%
+                        </span>
+                      </div>
+                      <div className="stat-row">
+                        <span className="stat-label">Questions:</span>
+                        <span className="stat-value">{result.questionsCount}</span>
+                      </div>
+                      <div className="stat-row">
+                        <span className="stat-label">Date:</span>
+                        <span className="stat-value date-text">
+                          {new Date(result.submittedAt).toLocaleDateString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric'
+                          })}
+                        </span>
+                      </div>
+                      <div className="stat-row">
+                        <span className="stat-label">Time:</span>
+                        <span className="stat-value date-text">
+                          {new Date(result.submittedAt).toLocaleTimeString('en-IN', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </div>
                     </div>
                   </div>
-
-                  <div className="percentage-circle">
-                    <svg width="80" height="80" viewBox="0 0 80 80">
-                      <circle cx="40" cy="40" r="35" fill="none" stroke="rgba(71, 85, 105, 0.3)" strokeWidth="6"/>
-                      <circle 
-                        cx="40" 
-                        cy="40" 
-                        r="35" 
-                        fill="none" 
-                        stroke={parseFloat(result.percentage) >= 70 ? '#22c55e' : '#ef4444'}
-                        strokeWidth="6"
-                        strokeDasharray={`${2 * Math.PI * 35}`}
-                        strokeDashoffset={`${2 * Math.PI * 35 * (1 - result.percentage / 100)}`}
-                        strokeLinecap="round"
-                        transform="rotate(-90 40 40)"
-                      />
-                      <text x="40" y="45" textAnchor="middle" fill="#e2e8f0" fontSize="16" fontWeight="700">
-                        {result.percentage}%
-                      </text>
-                    </svg>
-                  </div>
-                </div>
-              ))}
+                ))}
             </div>
           )}
         </div>
@@ -300,10 +280,10 @@ const Quiz = () => {
     );
   }
 
-  // RESULTS VIEW - After Exam Submission
+  // ==================== RESULTS VIEW ====================
   if (currentView === 'results') {
     const { maxScore } = calculateScore();
-    const percentage = ((score / maxScore) * 100).toFixed(1);
+    const percentage = maxScore > 0 ? ((score / maxScore) * 100).toFixed(1) : '0.0';
 
     return (
       <div className="quiz-container">
@@ -316,13 +296,20 @@ const Quiz = () => {
             <div className="final-score-display">
               <div className="score-circle-large">
                 <svg width="200" height="200" viewBox="0 0 200 200">
-                  <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(71, 85, 105, 0.3)" strokeWidth="12"/>
-                  <circle 
-                    cx="100" 
-                    cy="100" 
-                    r="90" 
-                    fill="none" 
-                    stroke={percentage >= 70 ? '#22c55e' : '#ef4444'}
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r="90"
+                    fill="none"
+                    stroke="rgba(71, 85, 105, 0.3)"
+                    strokeWidth="12"
+                  />
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r="90"
+                    fill="none"
+                    stroke={parseFloat(percentage) >= 70 ? '#22c55e' : '#ef4444'}
                     strokeWidth="12"
                     strokeDasharray={`${2 * Math.PI * 90}`}
                     strokeDashoffset={`${2 * Math.PI * 90 * (1 - percentage / 100)}`}
@@ -340,8 +327,8 @@ const Quiz = () => {
             </div>
 
             <div className="result-status">
-              <span className={`result-badge ${percentage >= 70 ? 'passed' : 'failed'}`}>
-                {percentage >= 70 ? '🎉 Passed' : '❌ Failed'}
+              <span className={`result-badge ${parseFloat(percentage) >= 50 ? 'passed' : 'failed'}`}>
+                {parseFloat(percentage) >= 50 ? 'Passed' : 'Failed'}
               </span>
             </div>
 
@@ -365,7 +352,7 @@ const Quiz = () => {
             </div>
 
             <div className="results-actions">
-              <button onClick={goToHome} className="btn-primary-large">
+              <button onClick={goHome} className="btn-primary-large">
                 Take Another Exam
               </button>
               <button onClick={viewHistory} className="btn-secondary-large">
@@ -378,7 +365,7 @@ const Quiz = () => {
     );
   }
 
-  // EXAM VIEW - Taking the Test
+  // ==================== EXAM VIEW ====================
   const currentQ = questions[currentQuestion];
 
   return (
@@ -409,21 +396,7 @@ const Quiz = () => {
               </button>
             ))}
           </div>
-          <div className="nav-legend">
-            <div className="legend-item">
-              <span className="legend-dot answered"></span>
-              <span>Answered</span>
-            </div>
-            <div className="legend-item">
-              <span className="legend-dot unanswered"></span>
-              <span>Not Answered</span>
-            </div>
-            <div className="legend-item">
-              <span className="legend-dot active"></span>
-              <span>Current</span>
-            </div>
-          </div>
-          <button onClick={handleSubmitExam} className="submit-exam-btn">
+          <button onClick={() => handleSubmitExam(false)} className="submit-exam-btn">
             Submit Exam
           </button>
         </div>
@@ -432,10 +405,14 @@ const Quiz = () => {
           <div className="question-info-bar">
             <div className="question-meta-tags">
               <span className={`type-badge ${currentQ.type}`}>
-                {currentQ.type === 'mcq' ? 'Multiple Choice' : currentQ.type === 'truefalse' ? 'True/False' : 'Coding'}
+                {currentQ.type === 'mcq' ? 'Multiple Choice' : currentQ.type === 'truefalse' ? 'True / False' : 'Coding'}
               </span>
-              <span className={`difficulty-badge ${currentQ.difficulty}`}>{currentQ.difficulty}</span>
-              <span className="marks-badge">{currentQ.marks} mark{currentQ.marks > 1 ? 's' : ''}</span>
+              <span className={`difficulty-badge ${currentQ.difficulty}`}>
+                {currentQ.difficulty}
+              </span>
+              <span className="marks-badge">
+                {currentQ.marks} mark{currentQ.marks > 1 ? 's' : ''}
+              </span>
             </div>
             <span className="question-counter">
               Question {currentQuestion + 1} of {questions.length}
@@ -449,20 +426,20 @@ const Quiz = () => {
           <div className="answer-section">
             {currentQ.type === 'mcq' && (
               <div className="options-container">
-                {currentQ.options.map((option, index) => (
-                  <label key={index} className="option-label">
+                {currentQ.options.map((opt, idx) => (
+                  <label key={idx} className="option-label">
                     <input
                       type="radio"
-                      name={`question-${currentQ.id}`}
-                      value={index}
-                      checked={answers[currentQ.id] == index}
-                      onChange={(e) => handleAnswerChange(currentQ.id, parseInt(e.target.value))}
+                      name={`q-${currentQ.id}`}
+                      value={idx}
+                      checked={answers[currentQ.id] === idx}
+                      onChange={() => handleAnswerChange(currentQ.id, idx)}
                     />
                     <span className="option-text">
-                      <span className="option-letter">{String.fromCharCode(65 + index)}.</span>
-                      {option}
+                      <span className="option-letter">{String.fromCharCode(65 + idx)}.</span>
+                      {opt}
                     </span>
-                    <span className="radio-custom"></span>
+                    <span className="radio-custom" />
                   </label>
                 ))}
               </div>
@@ -473,24 +450,24 @@ const Quiz = () => {
                 <label className="option-label">
                   <input
                     type="radio"
-                    name={`question-${currentQ.id}`}
+                    name={`q-${currentQ.id}`}
                     value="true"
                     checked={answers[currentQ.id] === 'true'}
-                    onChange={(e) => handleAnswerChange(currentQ.id, e.target.value)}
+                    onChange={() => handleAnswerChange(currentQ.id, 'true')}
                   />
                   <span className="option-text">True</span>
-                  <span className="radio-custom"></span>
+                  <span className="radio-custom" />
                 </label>
                 <label className="option-label">
                   <input
                     type="radio"
-                    name={`question-${currentQ.id}`}
+                    name={`q-${currentQ.id}`}
                     value="false"
                     checked={answers[currentQ.id] === 'false'}
-                    onChange={(e) => handleAnswerChange(currentQ.id, e.target.value)}
+                    onChange={() => handleAnswerChange(currentQ.id, 'false')}
                   />
                   <span className="option-text">False</span>
-                  <span className="radio-custom"></span>
+                  <span className="radio-custom" />
                 </label>
               </div>
             )}
@@ -503,10 +480,10 @@ const Quiz = () => {
                 </div>
                 <textarea
                   className="code-textarea"
-                  placeholder={currentQ.code || "// Write your code here..."}
+                  placeholder={currentQ.code || '// Write your code here...'}
                   value={answers[currentQ.id] || ''}
-                  onChange={(e) => handleAnswerChange(currentQ.id, e.target.value)}
-                  rows="12"
+                  onChange={e => handleAnswerChange(currentQ.id, e.target.value)}
+                  rows="10"
                 />
               </div>
             )}
@@ -515,7 +492,7 @@ const Quiz = () => {
           <div className="navigation-buttons">
             <button
               className="nav-button prev"
-              onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
+              onClick={() => setCurrentQuestion(prev => Math.max(0, prev - 1))}
               disabled={currentQuestion === 0}
             >
               ← Previous
@@ -524,12 +501,12 @@ const Quiz = () => {
             {currentQuestion < questions.length - 1 ? (
               <button
                 className="nav-button next"
-                onClick={() => setCurrentQuestion(currentQuestion + 1)}
+                onClick={() => setCurrentQuestion(prev => Math.min(questions.length - 1, prev + 1))}
               >
                 Next →
               </button>
             ) : (
-              <button className="nav-button submit" onClick={handleSubmitExam}>
+              <button className="nav-button submit" onClick={() => handleSubmitExam(false)}>
                 Submit Exam
               </button>
             )}
